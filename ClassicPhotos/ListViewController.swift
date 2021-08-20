@@ -124,16 +124,26 @@ class ListViewController: UITableViewController {
     func startOperations(for photoRecord: PhotoRecord, at indexPath: IndexPath) {
         switch photoRecord.state {
         case .new:
-            startDownload(for: photoRecord, at: indexPath)
+            guard let downloadOperation = startDownload(for: photoRecord, at: indexPath),
+                  let filtrationOperation = startFiltration(for: photoRecord, at: indexPath) else { return }
+            
+            filtrationOperation.addDependency(downloadOperation)
+            pendingOperations.downloadsInProgress[indexPath] = downloadOperation
+            pendingOperations.downloadQueue.addOperation(downloadOperation)
+            pendingOperations.filtrationsInProgress[indexPath] = filtrationOperation
+            pendingOperations.filtrationQueue.addOperation(filtrationOperation)
         case .downloaded:
-            startFiltration(for: photoRecord, at: indexPath)
+            guard let filtrationOperation = startFiltration(for: photoRecord, at: indexPath) else { return }
+            
+            pendingOperations.filtrationsInProgress[indexPath] = filtrationOperation
+            pendingOperations.filtrationQueue.addOperation(filtrationOperation)
         default:
             NSLog("do nothing")
         }
     }
     
-    func startDownload(for photoRecord: PhotoRecord, at indexPath: IndexPath) {
-        guard pendingOperations.downloadsInProgress[indexPath] == nil else { return }
+    func startDownload(for photoRecord: PhotoRecord, at indexPath: IndexPath) -> Operation? {
+        guard pendingOperations.downloadsInProgress[indexPath] == nil else { return nil }
         
         let downloader = ImageDownloader(photoRecord)
         downloader.completionBlock = {
@@ -144,13 +154,11 @@ class ListViewController: UITableViewController {
                 self.tableView.reloadRows(at: [indexPath], with: .fade)
             }
         }
-        
-        pendingOperations.downloadsInProgress[indexPath] = downloader
-        pendingOperations.downloadQueue.addOperation(downloader)
+        return downloader
     }
     
-    func startFiltration(for photoRecord: PhotoRecord, at indexPath: IndexPath) {
-        guard pendingOperations.filtrationsInProgress[indexPath] == nil else { return }
+    func startFiltration(for photoRecord: PhotoRecord, at indexPath: IndexPath) -> Operation? {
+        guard pendingOperations.filtrationsInProgress[indexPath] == nil else { return nil }
         
         let filterer = ImageFiltration(photoRecord)
         filterer.completionBlock = {
@@ -161,9 +169,7 @@ class ListViewController: UITableViewController {
                 self.tableView.reloadRows(at: [indexPath], with: .fade)
             }
         }
-        
-        pendingOperations.filtrationsInProgress[indexPath] = filterer
-        pendingOperations.filtrationQueue.addOperation(filterer)
+        return filterer
     }
     
     func suspendAllOperations() {
